@@ -1,0 +1,596 @@
+```yaml
+openapi: 3.0.3
+
+info:
+  title: SALESTORM API
+  version: 1.0.0
+  description: >
+    API specification for the SALESTORM flash-sale system.
+    The system handles high-concurrency purchases while preventing
+    inventory overselling, duplicate requests, payment failures,
+    and order recovery.
+
+servers:
+  - url: https://api.salestorm.example.com
+
+paths:
+
+  # ---------------------------------------------------------
+  # PRODUCT
+  # ---------------------------------------------------------
+
+  /products/{productId}:
+    get:
+      summary: Get product details
+      operationId: getProduct
+
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+
+      responses:
+        '200':
+          description: Product found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+
+        '404':
+          description: Product not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+
+  # ---------------------------------------------------------
+  # CART
+  # ---------------------------------------------------------
+
+  /cart/items:
+    post:
+      summary: Add product to cart
+      operationId: addCartItem
+
+      security:
+        - bearerAuth: []
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CartItemRequest'
+
+      responses:
+        '201':
+          description: Product added to cart
+
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+        '409':
+          description: Cart conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+
+  # ---------------------------------------------------------
+  # RESERVATION
+  # ---------------------------------------------------------
+
+  /reservations:
+    post:
+      summary: Reserve flash-sale inventory
+      operationId: createReservation
+
+      security:
+        - bearerAuth: []
+
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: >
+            Unique key used to prevent duplicate reservation requests.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReservationRequest'
+
+      responses:
+        '201':
+          description: Reservation created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reservation'
+
+        '400':
+          description: Invalid reservation request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+        '409':
+          description: Out of stock or duplicate reservation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+        '429':
+          description: Admission or rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+
+  /reservations/{reservationId}:
+    get:
+      summary: Get reservation status
+      operationId: getReservation
+
+      security:
+        - bearerAuth: []
+
+      parameters:
+        - name: reservationId
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 64
+
+      responses:
+        '200':
+          description: Reservation returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reservation'
+
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+        '404':
+          description: Reservation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+
+  /reservations/{reservationId}/release:
+    post:
+      summary: Release a reservation
+      operationId: releaseReservation
+
+      security:
+        - bearerAuth: []
+
+      parameters:
+        - name: reservationId
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 64
+
+      responses:
+        '200':
+          description: Reservation released
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reservation'
+
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+        '404':
+          description: Reservation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+        '409':
+          description: Reservation cannot be released in its current state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+
+  # ---------------------------------------------------------
+  # PAYMENT
+  # ---------------------------------------------------------
+
+  /payments:
+    post:
+      summary: Create or retry payment idempotently
+      operationId: createPayment
+
+      security:
+        - bearerAuth: []
+
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: >
+            Unique key used to prevent duplicate payment processing.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentRequest'
+
+      responses:
+        '201':
+          description: Payment created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+
+        '202':
+          description: Payment pending or requires reconciliation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+
+        '400':
+          description: Invalid payment request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+        '409':
+          description: Invalid payment state or duplicate conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+
+  /payments/{paymentId}:
+    get:
+      summary: Get payment status
+      operationId: getPayment
+
+      security:
+        - bearerAuth: []
+
+      parameters:
+        - name: paymentId
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 64
+
+      responses:
+        '200':
+          description: Payment returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+        '404':
+          description: Payment not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+
+  # ---------------------------------------------------------
+  # ORDERS
+  # ---------------------------------------------------------
+
+  /orders/{orderId}:
+    get:
+      summary: Get order status
+      operationId: getOrder
+
+      security:
+        - bearerAuth: []
+
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 64
+
+      responses:
+        '200':
+          description: Order returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+        '404':
+          description: Order not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+
+components:
+
+  # ---------------------------------------------------------
+  # SECURITY
+  # ---------------------------------------------------------
+
+  securitySchemes:
+
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+
+  # ---------------------------------------------------------
+  # SCHEMAS
+  # ---------------------------------------------------------
+
+  schemas:
+
+    Product:
+      type: object
+      required:
+        - productId
+        - name
+        - price
+      properties:
+        productId:
+          type: integer
+          format: int64
+
+        name:
+          type: string
+
+        price:
+          type: number
+          format: double
+
+
+    CartItemRequest:
+      type: object
+      required:
+        - productId
+        - quantity
+      properties:
+        productId:
+          type: integer
+          format: int64
+
+        quantity:
+          type: integer
+          minimum: 1
+
+
+    ReservationRequest:
+      type: object
+      required:
+        - productId
+        - quantity
+      properties:
+
+        productId:
+          type: integer
+          format: int64
+
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 1
+
+
+    Reservation:
+      type: object
+      required:
+        - reservationId
+        - productId
+        - customerId
+        - quantity
+        - status
+        - expiresAt
+      properties:
+
+        reservationId:
+          type: string
+
+        productId:
+          type: integer
+          format: int64
+
+        customerId:
+          type: integer
+          format: int64
+
+        quantity:
+          type: integer
+
+        status:
+          type: string
+          enum:
+            - RESERVED
+            - PAYMENT_PENDING
+            - CONFIRMED
+            - RELEASED
+            - EXPIRED
+
+        expiresAt:
+          type: string
+          format: date-time
+
+
+    PaymentRequest:
+      type: object
+      required:
+        - reservationId
+        - amount
+      properties:
+
+        reservationId:
+          type: string
+          maxLength: 64
+
+        amount:
+          type: number
+          format: double
+          minimum: 0
+
+
+    Payment:
+      type: object
+      required:
+        - paymentId
+        - orderId
+        - amount
+        - status
+      properties:
+
+        paymentId:
+          type: string
+
+        orderId:
+          type: string
+
+        amount:
+          type: number
+          format: double
+
+        status:
+          type: string
+          enum:
+            - PENDING
+            - SUCCESS
+            - FAILED
+            - TIMEOUT
+            - RECONCILIATION_REQUIRED
+
+
+    Order:
+      type: object
+      required:
+        - orderId
+        - customerId
+        - reservationId
+        - status
+        - totalAmount
+      properties:
+
+        orderId:
+          type: string
+
+        customerId:
+          type: integer
+          format: int64
+
+        reservationId:
+          type: string
+
+        status:
+          type: string
+          enum:
+            - CREATED
+            - PAYMENT_PENDING
+            - CONFIRMED
+            - FAILED
+            - CANCELLED
+
+        totalAmount:
+          type: number
+          format: double
+
+
+    Error:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+
+        code:
+          type: string
+
+        message:
+          type: string
+
+        timestamp:
+          type: string
+          format: date-time
+```
